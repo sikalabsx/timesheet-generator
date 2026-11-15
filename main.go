@@ -215,7 +215,7 @@ func render(path, client string, month time.Time, es []Entry) error {
 	pdf.SetFont("Go", "", 11)
 	pdf.CellFormat(25, 6, "Period:", "", 0, "L", false, 0, "")
 	pdf.SetFont("Go", "B", 11)
-	pdf.CellFormat(0, 6, month.Format("January 2006"), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 6, month.Format("01/2006"), "", 1, "L", false, 0, "")
 	pdf.Ln(6)
 
 	// Entries table
@@ -250,7 +250,7 @@ func render(path, client string, month time.Time, es []Entry) error {
 		if e.From != nil {
 			timeRange = e.From.Format("15:04") + " – " + e.To.Format("15:04")
 		}
-		vals := []string{e.Date.Format("Mon 02.01."), timeRange, e.TaskID, e.TaskName, fmtDuration(e.Duration)}
+		vals := []string{e.Date.Format("02.01.2006"), timeRange, e.TaskID, e.TaskName, fmtDuration(e.Duration)}
 		for i, c := range cols {
 			pdf.CellFormat(c.w, 7, fit(pdf, vals[i], c.w-2), "B", 0, c.align, false, 0, "")
 		}
