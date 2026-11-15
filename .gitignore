@@ -20,5 +20,8 @@
 *.local.md
 Makefile.local.mk
 
+# timesheet-generator app
+/timesheet-generator
+
 # Generated
 /out
