@@ -270,16 +270,9 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 
 	// Header
 	pdf.SetFont("Go", "B", 18)
-	pdf.CellFormat(0, 10, "Timesheet", "", 1, "L", false, 0, "")
-	pdf.SetFont("Go", "", 11)
-	pdf.CellFormat(25, 6, "Client:", "", 0, "L", false, 0, "")
-	pdf.SetFont("Go", "B", 11)
-	pdf.CellFormat(0, 6, client, "", 1, "L", false, 0, "")
-	pdf.SetFont("Go", "", 11)
-	pdf.CellFormat(25, 6, "Period:", "", 0, "L", false, 0, "")
-	pdf.SetFont("Go", "B", 11)
-	pdf.CellFormat(0, 6, month.Format("01/2006"), "", 1, "L", false, 0, "")
-	pdf.Ln(6)
+	title := "Timesheet — " + client + " — " + month.Format("01/2006")
+	pdf.CellFormat(0, 10, title, "", 1, "L", false, 0, "")
+	pdf.Ln(4)
 
 	// Entries table
 	cols := []struct {
