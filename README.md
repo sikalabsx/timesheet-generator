@@ -15,7 +15,8 @@ go run . [-f timesheet.local.yaml] [-o out] [-m 2024-06]
 Output:
 
 - `out/timesheet-<client>-<YYYY-MM>.pdf` monthly timesheet with all entries
-- `out/timesheet-<client>-<YYYY>.pdf` yearly summary with hours per month
+- `out/timesheet-<client>-<YYYY>-summary.pdf` yearly summary with hours per month
+- `out/timesheet-<client>-<YYYY>-all.pdf` all entries of the year, split by month
 
 ## Format
 

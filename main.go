@@ -131,13 +131,18 @@ func main() {
 		monthsByYear[y] = append(monthsByYear[y], m)
 	}
 	for _, y := range years {
-		path := prefix + y + ".pdf"
-		if err := renderYear(path, ts, y, monthsByYear[y], byMonth); err != nil {
-			log.Fatal(err)
-		}
 		var t time.Duration
 		for _, m := range monthsByYear[y] {
 			t += total(byMonth[m])
+		}
+		path := prefix + y + "-summary.pdf"
+		if err := renderYear(path, ts, y, monthsByYear[y], byMonth); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s  %d months  %s\n", path, len(monthsByYear[y]), fmtDuration(t))
+		path = prefix + y + "-all.pdf"
+		if err := renderYearAll(path, ts, y, monthsByYear[y], byMonth); err != nil {
+			log.Fatal(err)
 		}
 		fmt.Printf("%s  %d months  %s\n", path, len(monthsByYear[y]), fmtDuration(t))
 	}
@@ -371,7 +376,15 @@ func renderTable(pdf *fpdf.Fpdf, bottomMargin float64, cols []column, rows [][]s
 func renderMonth(path string, ts *Timesheet, month time.Time, es []Entry) error {
 	pdf, bottomMargin := newDoc(ts)
 	renderTitle(pdf, "Timesheet — "+ts.Client.Name+" — "+month.Format("01/2006"))
+	renderEntries(pdf, bottomMargin, es)
+	if !ts.HideSummaryByTask {
+		renderSummary(pdf, es, bottomMargin)
+	}
+	return pdf.OutputFileAndClose(path)
+}
 
+// renderEntries draws the table of entries with a total row.
+func renderEntries(pdf *fpdf.Fpdf, bottomMargin float64, es []Entry) {
 	var rows [][]string
 	for _, e := range es {
 		timeRange := ""
@@ -387,9 +400,44 @@ func renderMonth(path string, ts *Timesheet, month time.Time, es []Entry) error 
 		{"Task", 82, "L"},
 		{"Hours", 20, "R"},
 	}, rows, "Total", fmtTotal(total(es)))
+}
+
+// renderHeading draws a section heading, starting a new page if the heading,
+// the table header and the first row would not fit.
+func renderHeading(pdf *fpdf.Fpdf, bottomMargin float64, text string, size float64) {
+	if _, pageH := pdf.GetPageSize(); pdf.GetY()+8+8+8+7 > pageH-bottomMargin {
+		pdf.AddPage()
+	} else {
+		pdf.Ln(8)
+	}
+	pdf.SetFont("Go", "B", size)
+	pdf.CellFormat(0, 8, text, "", 1, "L", false, 0, "")
+}
+
+// renderYearAll renders all entries of the year, one H2 section per month.
+func renderYearAll(path string, ts *Timesheet, year string, months []string, byMonth map[string][]Entry) error {
+	pdf, bottomMargin := newDoc(ts)
+	renderTitle(pdf, "Timesheet — "+ts.Client.Name+" — "+year)
+
+	var all []Entry
+	for i, m := range months {
+		es := byMonth[m]
+		all = append(all, es...)
+		if i == 0 {
+			pdf.SetFont("Go", "B", 14)
+			pdf.CellFormat(0, 8, es[0].Date.Format("01/2006"), "", 1, "L", false, 0, "")
+		} else {
+			renderHeading(pdf, bottomMargin, es[0].Date.Format("01/2006"), 14)
+		}
+		renderEntries(pdf, bottomMargin, es)
+	}
+
+	pdf.Ln(4)
+	pdf.SetFont("Go", "B", 12)
+	pdf.CellFormat(0, 8, "Total "+year+": "+fmtTotal(total(all)), "", 1, "R", false, 0, "")
 
 	if !ts.HideSummaryByTask {
-		renderSummary(pdf, es, bottomMargin)
+		renderSummary(pdf, all, bottomMargin)
 	}
 	return pdf.OutputFileAndClose(path)
 }
@@ -432,14 +480,7 @@ func renderSummary(pdf *fpdf.Fpdf, es []Entry, bottomMargin float64) {
 		}
 		idx[k].d += e.Duration
 	}
-	// Keep the heading, table header and first row together.
-	if _, pageH := pdf.GetPageSize(); pdf.GetY()+8+8+8+7 > pageH-bottomMargin {
-		pdf.AddPage()
-	} else {
-		pdf.Ln(8)
-	}
-	pdf.SetFont("Go", "B", 12)
-	pdf.CellFormat(0, 8, "Summary by task", "", 1, "L", false, 0, "")
+	renderHeading(pdf, bottomMargin, "Summary by task", 12)
 	var rows [][]string
 	for _, s := range sums {
 		rows = append(rows, []string{s.id, s.name, fmtDuration(s.d)})
