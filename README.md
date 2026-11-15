@@ -39,6 +39,11 @@ entries:
     to: 2024-06-02 15:25
     task_name: Requirement analysis
     task_id: MSTP-2
+  # or date + from/to as times (task_id is optional)
+  - date: 2024-06-03
+    from: '10:00'
+    to: '12:05'
+    task_name: Requirement analysis
 ```
 
 ### Markdown in header and footer

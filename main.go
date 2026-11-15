@@ -129,26 +129,45 @@ func load(path string) (*Timesheet, error) {
 	return &ts, nil
 }
 
+// parseFromTo parses "YYYY-MM-DD HH:MM", or "HH:MM" when the entry has a date.
+func parseFromTo(date, s string) (time.Time, error) {
+	if date == "" {
+		return time.ParseInLocation(dateTimeLayout, s, time.Local)
+	}
+	if t, err := time.ParseInLocation(dateTimeLayout, s, time.Local); err == nil {
+		if t.Format(dateLayout) != date {
+			return time.Time{}, fmt.Errorf("%q is not on date %s", s, date)
+		}
+		return t, nil
+	}
+	t, err := time.ParseInLocation(dateLayout+" 15:04", date+" "+s, time.Local)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("expected HH:MM, got %q", s)
+	}
+	return t, nil
+}
+
 func parseEntries(raw []RawEntry) ([]Entry, error) {
 	var out []Entry
 	for i, r := range raw {
 		e := Entry{TaskName: r.TaskName, TaskID: r.TaskID}
 		errf := func(format string, a ...any) error {
-			return fmt.Errorf("entry #%d (%s): %s", i+1, r.TaskID, fmt.Sprintf(format, a...))
+			label := strings.TrimSpace(strings.Join([]string{r.TaskID, r.TaskName}, " "))
+			return fmt.Errorf("entry #%d (%s): %s", i+1, label, fmt.Sprintf(format, a...))
 		}
 		switch {
 		case r.From != "" || r.To != "":
 			if r.From == "" || r.To == "" {
 				return nil, errf("both from and to are required")
 			}
-			if r.Date != "" || r.Duration != "" {
-				return nil, errf("use either from/to or date/duration, not both")
+			if r.Duration != "" {
+				return nil, errf("use either from/to or duration, not both")
 			}
-			from, err := time.ParseInLocation(dateTimeLayout, r.From, time.Local)
+			from, err := parseFromTo(r.Date, r.From)
 			if err != nil {
 				return nil, errf("invalid from: %v", err)
 			}
-			to, err := time.ParseInLocation(dateTimeLayout, r.To, time.Local)
+			to, err := parseFromTo(r.Date, r.To)
 			if err != nil {
 				return nil, errf("invalid to: %v", err)
 			}
