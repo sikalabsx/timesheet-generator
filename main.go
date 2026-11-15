@@ -13,6 +13,9 @@ import (
 
 	"github.com/go-pdf/fpdf"
 	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/gobolditalic"
+	"golang.org/x/image/font/gofont/goitalic"
+	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 	"gopkg.in/yaml.v3"
 )
@@ -206,12 +209,25 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("Go", "", goregular.TTF)
 	pdf.AddUTF8FontFromBytes("Go", "B", gobold.TTF)
+	pdf.AddUTF8FontFromBytes("Go", "I", goitalic.TTF)
+	pdf.AddUTF8FontFromBytes("Go", "BI", gobolditalic.TTF)
+	pdf.AddUTF8FontFromBytes("GoMono", "", gomono.TTF)
 	pdf.SetMargins(15, 15, 15)
 
-	const smallLineH = 4.0
-	headerLines := textLines(ts.Header)
-	footerLines := textLines(ts.Footer)
-	footerH := float64(max(len(footerLines), 1)) * smallLineH
+	const (
+		headerSize  = 11.0
+		footerSize  = 8.0
+		lineSpacing = 1.5
+	)
+	headerLines := parseMarkdown(ts.Header)
+	footerLines := parseMarkdown(ts.Footer)
+	// The page number sits on the last footer line (or alone if there is no footer).
+	pageNoLine := mdLine{scale: 1}
+	if len(footerLines) > 0 {
+		pageNoLine = footerLines[len(footerLines)-1]
+	}
+	pageNoH := pageNoLine.height(footerSize, lineSpacing)
+	footerH := max(markdownHeight(footerLines, footerSize, lineSpacing), pageNoH)
 	bottomMargin := 15 + footerH
 	pdf.SetAutoPageBreak(true, bottomMargin)
 
@@ -219,22 +235,15 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 		if len(headerLines) == 0 {
 			return
 		}
-		pdf.SetFont("Go", "", 11)
-		for _, l := range headerLines {
-			pdf.CellFormat(0, 6, l, "", 1, "L", false, 0, "")
-		}
+		renderMarkdown(pdf, headerLines, headerSize, lineSpacing)
 		pdf.Ln(1)
 	})
 	pdf.SetFooterFunc(func() {
 		pdf.SetY(-(10 + footerH))
-		pdf.SetFont("Go", "", 8)
-		if len(footerLines) > 0 {
-			for _, l := range footerLines {
-				pdf.CellFormat(0, smallLineH, l, "", 1, "L", false, 0, "")
-			}
-		}
-		pdf.SetY(-(10 + smallLineH)) // page number on the last footer line
-		pdf.CellFormat(0, smallLineH, fmt.Sprintf("Page %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
+		renderMarkdown(pdf, footerLines, footerSize, lineSpacing)
+		pdf.SetY(-(10 + pageNoH))
+		pdf.SetFont("Go", "", footerSize)
+		pdf.CellFormat(0, pageNoH, fmt.Sprintf("Page %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 	})
 	pdf.AliasNbPages("")
 	pdf.AddPage()
@@ -309,7 +318,12 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 		}
 		idx[k].d += e.Duration
 	}
-	pdf.Ln(8)
+	// Keep the heading, table header and first row together.
+	if _, pageH := pdf.GetPageSize(); pdf.GetY()+8+8+8+7 > pageH-bottomMargin {
+		pdf.AddPage()
+	} else {
+		pdf.Ln(8)
+	}
 	pdf.SetFont("Go", "B", 12)
 	pdf.CellFormat(0, 8, "Summary by task", "", 1, "L", false, 0, "")
 	pdf.SetFont("Go", "B", 10)
