@@ -262,9 +262,15 @@ func fmtHours(d time.Duration) string {
 	return strconv.FormatFloat(math.Round(h*100)/100, 'f', -1, 64) + "h"
 }
 
-// fmtTotal formats d as "H:MM (decimal h)", e.g. "1:30 (1.5h)".
+// fmtMD formats d as man-days (8h), e.g. 12h -> "1.5 MD".
+func fmtMD(d time.Duration) string {
+	md := d.Round(time.Minute).Hours() / 8
+	return strconv.FormatFloat(math.Round(md*100)/100, 'f', -1, 64) + " MD"
+}
+
+// fmtTotal formats d as "H:MM (decimal h, man-days)", e.g. "12:00 (12h, 1.5 MD)".
 func fmtTotal(d time.Duration) string {
-	return fmtDuration(d) + " (" + fmtHours(d) + ")"
+	return fmtDuration(d) + " (" + fmtHours(d) + ", " + fmtMD(d) + ")"
 }
 
 func fmtDuration(d time.Duration) string {
@@ -420,9 +426,15 @@ func renderYearAll(path string, ts *Timesheet, year string, months []string, byM
 	renderTitle(pdf, "Timesheet — "+ts.Client.Name+" — "+year)
 
 	var all []Entry
+	for _, m := range months {
+		all = append(all, byMonth[m]...)
+	}
+	pdf.SetFont("Go", "B", 12)
+	pdf.CellFormat(0, 8, "Total: "+fmtTotal(total(all)), "", 1, "L", false, 0, "")
+	pdf.Ln(4)
+
 	for i, m := range months {
 		es := byMonth[m]
-		all = append(all, es...)
 		if i == 0 {
 			pdf.SetFont("Go", "B", 14)
 			pdf.CellFormat(0, 8, es[0].Date.Format("01/2006"), "", 1, "L", false, 0, "")
@@ -431,10 +443,6 @@ func renderYearAll(path string, ts *Timesheet, year string, months []string, byM
 		}
 		renderEntries(pdf, bottomMargin, es)
 	}
-
-	pdf.Ln(4)
-	pdf.SetFont("Go", "B", 12)
-	pdf.CellFormat(0, 8, "Total "+year+": "+fmtTotal(total(all)), "", 1, "R", false, 0, "")
 
 	if !ts.HideSummaryByTask {
 		renderSummary(pdf, all, bottomMargin)
