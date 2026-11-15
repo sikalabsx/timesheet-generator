@@ -148,6 +148,11 @@ func parseFromTo(date, s string) (time.Time, error) {
 	return t, nil
 }
 
+func isTimeOnly(s string) bool {
+	_, err := time.Parse("15:04", s)
+	return err == nil
+}
+
 func parseEntries(raw []RawEntry) ([]Entry, error) {
 	var out []Entry
 	for i, r := range raw {
@@ -171,6 +176,10 @@ func parseEntries(raw []RawEntry) ([]Entry, error) {
 			to, err := parseFromTo(r.Date, r.To)
 			if err != nil {
 				return nil, errf("invalid to: %v", err)
+			}
+			// Time-only "to" earlier than "from" means it ends the next day (e.g. 22:20 – 00:00).
+			if r.Date != "" && isTimeOnly(r.To) && to.Before(from) {
+				to = to.AddDate(0, 0, 1)
 			}
 			if !to.After(from) {
 				return nil, errf("to must be after from")

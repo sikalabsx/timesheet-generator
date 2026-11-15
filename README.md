@@ -41,7 +41,8 @@ entries:
     to: 2024-06-02 15:25
     task_name: Requirement analysis
     task_id: MSTP-2
-  # or date + from/to as times (task_id is optional)
+  # or date + from/to as times (task_id is optional);
+  # "to" earlier than "from" means the next day, e.g. 22:20 - 00:00
   - date: 2024-06-03
     from: '10:00'
     to: '12:05'
