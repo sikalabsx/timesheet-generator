@@ -32,9 +32,10 @@ type Timesheet struct {
 	Client struct {
 		Name string `yaml:"name"`
 	} `yaml:"client"`
-	Header  string     `yaml:"header"`
-	Footer  string     `yaml:"footer"`
-	Entries []RawEntry `yaml:"entries"`
+	Header            string     `yaml:"header"`
+	Footer            string     `yaml:"footer"`
+	HideSummaryByTask bool       `yaml:"hide_summary_by_task"`
+	Entries           []RawEntry `yaml:"entries"`
 }
 
 // textLines splits multi-line YAML text into lines, dropping trailing empty ones.
@@ -322,7 +323,13 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 	pdf.CellFormat(160, 8, "Total", "", 0, "R", false, 0, "")
 	pdf.CellFormat(20, 8, fmtDuration(total(es)), "", 1, "R", false, 0, "")
 
-	// Summary by task
+	if !ts.HideSummaryByTask {
+		renderSummary(pdf, es, bottomMargin)
+	}
+	return pdf.OutputFileAndClose(path)
+}
+
+func renderSummary(pdf *fpdf.Fpdf, es []Entry, bottomMargin float64) {
 	type taskSum struct {
 		id, name string
 		d        time.Duration
@@ -356,8 +363,6 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 		pdf.CellFormat(135, 7, fit(pdf, s.name, 133), "B", 0, "L", false, 0, "")
 		pdf.CellFormat(20, 7, fmtDuration(s.d), "B", 1, "R", false, 0, "")
 	}
-
-	return pdf.OutputFileAndClose(path)
 }
 
 // fit truncates s with an ellipsis so it fits into width w.

@@ -28,6 +28,8 @@ header: |
 # optional, multi-line Markdown, printed on every page (page number on the last line)
 footer: |
   **Approved by:** ____________________
+# optional, hide the "Summary by task" table (default false)
+hide_summary_by_task: true
 entries:
   # date + duration (Go duration format, e.g. 4h30m)
   - date: 2024-06-01
