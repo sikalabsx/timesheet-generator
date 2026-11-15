@@ -4,10 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -249,6 +251,17 @@ func total(es []Entry) time.Duration {
 	return t
 }
 
+// fmtHours formats d as decimal hours, e.g. 1h30m -> "1.5h", 10h35m -> "10.58h".
+func fmtHours(d time.Duration) string {
+	h := d.Round(time.Minute).Hours()
+	return strconv.FormatFloat(math.Round(h*100)/100, 'f', -1, 64) + "h"
+}
+
+// fmtTotal formats d as "H:MM (decimal h)", e.g. "1:30 (1.5h)".
+func fmtTotal(d time.Duration) string {
+	return fmtDuration(d) + " (" + fmtHours(d) + ")"
+}
+
 func fmtDuration(d time.Duration) string {
 	m := int(d.Round(time.Minute).Minutes())
 	return fmt.Sprintf("%d:%02d", m/60, m%60)
@@ -344,13 +357,15 @@ func renderTable(pdf *fpdf.Fpdf, bottomMargin float64, cols []column, rows [][]s
 	if totalLabel == "" {
 		return
 	}
-	var labelW float64
-	for _, c := range cols[:len(cols)-1] {
-		labelW += c.w
+	var tableW float64
+	for _, c := range cols {
+		tableW += c.w
 	}
 	pdf.SetFont("Go", "B", 10)
-	pdf.CellFormat(labelW, 8, totalLabel, "", 0, "R", false, 0, "")
-	pdf.CellFormat(cols[len(cols)-1].w, 8, totalValue, "", 1, "R", false, 0, "")
+	// The value may be wider than the last column (e.g. "10:35 (10.58h)").
+	valueW := max(cols[len(cols)-1].w, pdf.GetStringWidth(totalValue)+2)
+	pdf.CellFormat(tableW-valueW, 8, totalLabel, "", 0, "R", false, 0, "")
+	pdf.CellFormat(valueW, 8, totalValue, "", 1, "R", false, 0, "")
 }
 
 func renderMonth(path string, ts *Timesheet, month time.Time, es []Entry) error {
@@ -371,7 +386,7 @@ func renderMonth(path string, ts *Timesheet, month time.Time, es []Entry) error 
 		{"Task ID", 25, "L"},
 		{"Task", 82, "L"},
 		{"Hours", 20, "R"},
-	}, rows, "Total", fmtDuration(total(es)))
+	}, rows, "Total", fmtTotal(total(es)))
 
 	if !ts.HideSummaryByTask {
 		renderSummary(pdf, es, bottomMargin)
@@ -394,7 +409,7 @@ func renderYear(path string, ts *Timesheet, year string, months []string, byMont
 		{"Month", 50, "L"},
 		{"Entries", 110, "R"},
 		{"Hours", 20, "R"},
-	}, rows, "Total", fmtDuration(total(all)))
+	}, rows, "Total", fmtTotal(total(all)))
 
 	if !ts.HideSummaryByTask {
 		renderSummary(pdf, all, bottomMargin)
