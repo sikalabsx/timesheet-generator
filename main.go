@@ -104,14 +104,40 @@ func main() {
 	}
 	sort.Strings(months)
 
+	prefix := filepath.Join(*outDir, "timesheet-"+slug(ts.Client.Name)+"-")
 	for _, m := range months {
 		es := byMonth[m]
 		sort.SliceStable(es, func(i, j int) bool { return es[i].sortKey().Before(es[j].sortKey()) })
-		path := filepath.Join(*outDir, fmt.Sprintf("timesheet-%s-%s.pdf", slug(ts.Client.Name), m))
-		if err := render(path, ts, es[0].Date, es); err != nil {
+		path := prefix + m + ".pdf"
+		if err := renderMonth(path, ts, es[0].Date, es); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("%s  %d entries  %s\n", path, len(es), fmtDuration(total(es)))
+	}
+
+	// Yearly summaries (skipped when generating a single month).
+	if *month != "" {
+		return
+	}
+	monthsByYear := map[string][]string{}
+	var years []string
+	for _, m := range months {
+		y := m[:4]
+		if monthsByYear[y] == nil {
+			years = append(years, y)
+		}
+		monthsByYear[y] = append(monthsByYear[y], m)
+	}
+	for _, y := range years {
+		path := prefix + y + ".pdf"
+		if err := renderYear(path, ts, y, monthsByYear[y], byMonth); err != nil {
+			log.Fatal(err)
+		}
+		var t time.Duration
+		for _, m := range monthsByYear[y] {
+			t += total(byMonth[m])
+		}
+		fmt.Printf("%s  %d months  %s\n", path, len(monthsByYear[y]), fmtDuration(t))
 	}
 }
 
@@ -233,8 +259,9 @@ func slug(s string) string {
 	return strings.Trim(s, "-")
 }
 
-func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
-	client := ts.Client.Name
+// newDoc creates an A4 document with fonts, Markdown header/footer and page numbers.
+// It returns the document and its bottom margin (which includes the footer).
+func newDoc(ts *Timesheet) (*fpdf.Fpdf, float64) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("Go", "", goregular.TTF)
 	pdf.AddUTF8FontFromBytes("Go", "B", gobold.TTF)
@@ -276,25 +303,24 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 	})
 	pdf.AliasNbPages("")
 	pdf.AddPage()
+	return pdf, bottomMargin
+}
 
-	// Header
+func renderTitle(pdf *fpdf.Fpdf, title string) {
 	pdf.SetFont("Go", "B", 18)
-	title := "Timesheet — " + client + " — " + month.Format("01/2006")
 	pdf.CellFormat(0, 10, title, "", 1, "L", false, 0, "")
 	pdf.Ln(4)
+}
 
-	// Entries table
-	cols := []struct {
-		title string
-		w     float64
-		align string
-	}{
-		{"Date", 25, "L"},
-		{"Time", 28, "L"},
-		{"Task ID", 25, "L"},
-		{"Task", 82, "L"},
-		{"Hours", 20, "R"},
-	}
+type column struct {
+	title string
+	w     float64
+	align string
+}
+
+// renderTable draws a table, repeating the column header after page breaks,
+// followed by a bold total row in the last column.
+func renderTable(pdf *fpdf.Fpdf, bottomMargin float64, cols []column, rows [][]string, totalLabel, totalValue string) {
 	header := func() {
 		pdf.SetFont("Go", "B", 10)
 		pdf.SetFillColor(230, 230, 230)
@@ -302,31 +328,76 @@ func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
 			pdf.CellFormat(c.w, 8, c.title, "B", 0, c.align, true, 0, "")
 		}
 		pdf.Ln(-1)
+		pdf.SetFont("Go", "", 10)
 	}
 	header()
-	pdf.SetFont("Go", "", 10)
-	for _, e := range es {
+	for _, row := range rows {
 		if _, pageH := pdf.GetPageSize(); pdf.GetY()+7 > pageH-bottomMargin {
 			pdf.AddPage()
 			header()
-			pdf.SetFont("Go", "", 10)
 		}
+		for i, c := range cols {
+			pdf.CellFormat(c.w, 7, fit(pdf, row[i], c.w-2), "B", 0, c.align, false, 0, "")
+		}
+		pdf.Ln(-1)
+	}
+	if totalLabel == "" {
+		return
+	}
+	var labelW float64
+	for _, c := range cols[:len(cols)-1] {
+		labelW += c.w
+	}
+	pdf.SetFont("Go", "B", 10)
+	pdf.CellFormat(labelW, 8, totalLabel, "", 0, "R", false, 0, "")
+	pdf.CellFormat(cols[len(cols)-1].w, 8, totalValue, "", 1, "R", false, 0, "")
+}
+
+func renderMonth(path string, ts *Timesheet, month time.Time, es []Entry) error {
+	pdf, bottomMargin := newDoc(ts)
+	renderTitle(pdf, "Timesheet — "+ts.Client.Name+" — "+month.Format("01/2006"))
+
+	var rows [][]string
+	for _, e := range es {
 		timeRange := ""
 		if e.From != nil {
 			timeRange = e.From.Format("15:04") + " – " + e.To.Format("15:04")
 		}
-		vals := []string{e.Date.Format("02.01.2006"), timeRange, e.TaskID, e.TaskName, fmtDuration(e.Duration)}
-		for i, c := range cols {
-			pdf.CellFormat(c.w, 7, fit(pdf, vals[i], c.w-2), "B", 0, c.align, false, 0, "")
-		}
-		pdf.Ln(-1)
+		rows = append(rows, []string{e.Date.Format("02.01.2006"), timeRange, e.TaskID, e.TaskName, fmtDuration(e.Duration)})
 	}
-	pdf.SetFont("Go", "B", 10)
-	pdf.CellFormat(160, 8, "Total", "", 0, "R", false, 0, "")
-	pdf.CellFormat(20, 8, fmtDuration(total(es)), "", 1, "R", false, 0, "")
+	renderTable(pdf, bottomMargin, []column{
+		{"Date", 25, "L"},
+		{"Time", 28, "L"},
+		{"Task ID", 25, "L"},
+		{"Task", 82, "L"},
+		{"Hours", 20, "R"},
+	}, rows, "Total", fmtDuration(total(es)))
 
 	if !ts.HideSummaryByTask {
 		renderSummary(pdf, es, bottomMargin)
+	}
+	return pdf.OutputFileAndClose(path)
+}
+
+func renderYear(path string, ts *Timesheet, year string, months []string, byMonth map[string][]Entry) error {
+	pdf, bottomMargin := newDoc(ts)
+	renderTitle(pdf, "Yearly Summary — "+ts.Client.Name+" — "+year)
+
+	var rows [][]string
+	var all []Entry
+	for _, m := range months {
+		es := byMonth[m]
+		all = append(all, es...)
+		rows = append(rows, []string{es[0].Date.Format("01/2006"), fmt.Sprint(len(es)), fmtDuration(total(es))})
+	}
+	renderTable(pdf, bottomMargin, []column{
+		{"Month", 50, "L"},
+		{"Entries", 110, "R"},
+		{"Hours", 20, "R"},
+	}, rows, "Total", fmtDuration(total(all)))
+
+	if !ts.HideSummaryByTask {
+		renderSummary(pdf, all, bottomMargin)
 	}
 	return pdf.OutputFileAndClose(path)
 }
@@ -354,17 +425,15 @@ func renderSummary(pdf *fpdf.Fpdf, es []Entry, bottomMargin float64) {
 	}
 	pdf.SetFont("Go", "B", 12)
 	pdf.CellFormat(0, 8, "Summary by task", "", 1, "L", false, 0, "")
-	pdf.SetFont("Go", "B", 10)
-	pdf.SetFillColor(230, 230, 230)
-	pdf.CellFormat(25, 8, "Task ID", "B", 0, "L", true, 0, "")
-	pdf.CellFormat(135, 8, "Task", "B", 0, "L", true, 0, "")
-	pdf.CellFormat(20, 8, "Hours", "B", 1, "R", true, 0, "")
-	pdf.SetFont("Go", "", 10)
+	var rows [][]string
 	for _, s := range sums {
-		pdf.CellFormat(25, 7, s.id, "B", 0, "L", false, 0, "")
-		pdf.CellFormat(135, 7, fit(pdf, s.name, 133), "B", 0, "L", false, 0, "")
-		pdf.CellFormat(20, 7, fmtDuration(s.d), "B", 1, "R", false, 0, "")
+		rows = append(rows, []string{s.id, s.name, fmtDuration(s.d)})
 	}
+	renderTable(pdf, bottomMargin, []column{
+		{"Task ID", 25, "L"},
+		{"Task", 135, "L"},
+		{"Hours", 20, "R"},
+	}, rows, "", "")
 }
 
 // fit truncates s with an ellipsis so it fits into width w.

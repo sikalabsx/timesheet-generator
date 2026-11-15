@@ -1,6 +1,6 @@
 # sikalabsx/timesheet-generator
 
-Generate monthly PDF timesheets from a YAML file.
+Generate monthly PDF timesheets and yearly summaries from a YAML file.
 
 ## Usage
 
@@ -10,9 +10,12 @@ go run . [-f timesheet.local.yaml] [-o out] [-m 2024-06]
 
 - `-f` input YAML (default `timesheet.local.yaml`)
 - `-o` output directory (default `out`)
-- `-m` generate only one month (`YYYY-MM`); by default all months are generated
+- `-m` generate only one month (`YYYY-MM`, no yearly summary); by default all months and years are generated
 
-Output: `out/timesheet-<client>-<YYYY-MM>.pdf`
+Output:
+
+- `out/timesheet-<client>-<YYYY-MM>.pdf` monthly timesheet with all entries
+- `out/timesheet-<client>-<YYYY>.pdf` yearly summary with hours per month
 
 ## Format
 
