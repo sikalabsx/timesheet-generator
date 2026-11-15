@@ -29,7 +29,18 @@ type Timesheet struct {
 	Client struct {
 		Name string `yaml:"name"`
 	} `yaml:"client"`
+	Header  string     `yaml:"header"`
+	Footer  string     `yaml:"footer"`
 	Entries []RawEntry `yaml:"entries"`
+}
+
+// textLines splits multi-line YAML text into lines, dropping trailing empty ones.
+func textLines(s string) []string {
+	s = strings.TrimRight(s, "\n ")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
 }
 
 type RawEntry struct {
@@ -93,7 +104,7 @@ func main() {
 		es := byMonth[m]
 		sort.SliceStable(es, func(i, j int) bool { return es[i].sortKey().Before(es[j].sortKey()) })
 		path := filepath.Join(*outDir, fmt.Sprintf("timesheet-%s-%s.pdf", slug(ts.Client.Name), m))
-		if err := render(path, ts.Client.Name, es[0].Date, es); err != nil {
+		if err := render(path, ts, es[0].Date, es); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("%s  %d entries  %s\n", path, len(es), fmtDuration(total(es)))
@@ -190,17 +201,40 @@ func slug(s string) string {
 	return strings.Trim(s, "-")
 }
 
-func render(path, client string, month time.Time, es []Entry) error {
+func render(path string, ts *Timesheet, month time.Time, es []Entry) error {
+	client := ts.Client.Name
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("Go", "", goregular.TTF)
 	pdf.AddUTF8FontFromBytes("Go", "B", gobold.TTF)
 	pdf.SetMargins(15, 15, 15)
-	pdf.SetAutoPageBreak(true, 15)
+
+	const smallLineH = 4.0
+	headerLines := textLines(ts.Header)
+	footerLines := textLines(ts.Footer)
+	footerH := float64(max(len(footerLines), 1)) * smallLineH
+	bottomMargin := 15 + footerH
+	pdf.SetAutoPageBreak(true, bottomMargin)
+
+	pdf.SetHeaderFunc(func() {
+		if len(headerLines) == 0 {
+			return
+		}
+		pdf.SetFont("Go", "", 11)
+		for _, l := range headerLines {
+			pdf.CellFormat(0, 6, l, "", 1, "L", false, 0, "")
+		}
+		pdf.Ln(1)
+	})
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-12)
+		pdf.SetY(-(10 + footerH))
 		pdf.SetFont("Go", "", 8)
-		pdf.SetTextColor(120, 120, 120)
-		pdf.CellFormat(0, 5, fmt.Sprintf("Page %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
+		if len(footerLines) > 0 {
+			for _, l := range footerLines {
+				pdf.CellFormat(0, smallLineH, l, "", 1, "L", false, 0, "")
+			}
+		}
+		pdf.SetY(-(10 + smallLineH)) // page number on the last footer line
+		pdf.CellFormat(0, smallLineH, fmt.Sprintf("Page %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 	})
 	pdf.AliasNbPages("")
 	pdf.AddPage()
@@ -241,7 +275,7 @@ func render(path, client string, month time.Time, es []Entry) error {
 	header()
 	pdf.SetFont("Go", "", 10)
 	for _, e := range es {
-		if pdf.GetY() > 270 {
+		if _, pageH := pdf.GetPageSize(); pdf.GetY()+7 > pageH-bottomMargin {
 			pdf.AddPage()
 			header()
 			pdf.SetFont("Go", "", 10)
